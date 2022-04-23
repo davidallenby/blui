@@ -1,0 +1,161 @@
+@using System.Threading.Tasks;
+@using System.Timers;
+@typeparam TItem
+@implements IDisposable;
+
+<div class="position-relative oiautocomplete">
+    <div class="position-relative oiautocomplete-input-wrapper">
+        <input type="text"
+               class="form-control"
+               placeholder="@PlaceHolder"
+               @ref="_input"
+               @bind-value="Query"
+               @bind-value:event="oninput"
+               @onkeyup="@HandleKeyUp"
+               @onfocus="@ShowPanel"
+               @onblur="@CheckIfOptionsHasFocus"
+               />
+        <div class="position-absolute" style="right:5px; top:7px">
+            <span></span>
+        </div>
+    </div>
+    @if (Data.Count > 0 && _showResults)
+    {
+        <ul class="list-unstyled position-absolute top-100 start-0 w-100 bg-white border-left border-right border-bottom shadow shadow-sm oiautocomplete-options"
+            @onmouseenter="@(() => _optionsHasFocus = true)"
+            @onmouseleave="@(() => _optionsHasFocus = false)"
+        >
+            @foreach (TItem item in Data)
+            {
+                <li class="oiautocomplete-options-item">
+                    <button type="button" class="px-3 py-2 bg-transparent border-0 text-start w-100"
+                        @onclick="@(() => OnSelectItem(item))"
+                    >
+                        @ChildContent(item)
+                    </button>
+                </li>
+            }
+        </ul>
+    }
+</div>
+
+
+
+@code {
+    [Parameter]
+    public EventCallback<string> OnSearchEvent { get; set; }
+    [Parameter]
+    public EventCallback<TItem> OnChangeEvent { get; set; }
+    [Parameter]
+    public string PlaceHolder { get; set; } = "";
+
+    private string _query = "";
+    [Parameter]
+    public string Query
+    { 
+        get => _query;
+        set
+        {
+            if (value == _query) return;
+            _query = value;
+        }
+    }
+    [Parameter]
+    public EventCallback<String> QueryChanged { get; set; }
+    [Parameter]
+    public List<TItem> Data { get; set; }
+    [Parameter]
+    public EventCallback<List<TItem>> DataChanged { get; set; }
+    [Parameter]
+    public RenderFragment<TItem> ChildContent { get; set; }
+    [Parameter]
+    public int DebounceTime { get; set; } = 400;
+
+    private ElementReference _input;
+    private bool _isLoading = false;
+    private Timer _timer = null;
+
+    private bool _showResults = true;
+    private bool _optionsHasFocus = false;
+
+    protected override void OnInitialized()
+    {
+        _timer = new Timer(1000);
+        _timer.Elapsed += OnUserFinish;
+        _timer.AutoReset = false;
+    }
+
+    async Task HandleKeyUp(KeyboardEventArgs e)
+    {
+        // remove previous one
+        _timer.Stop();
+        // new timer
+        _timer.Start();
+        // Tell the parent component the query string has changed
+        await QueryChanged.InvokeAsync(_query);
+        // If the user clears the input value (backspace) we want to clear the search results dropdown
+        if (string.IsNullOrEmpty(_query) )
+        {
+            await ClearResults();
+        }
+    }
+
+    private async Task ClearResults()
+    {
+        Data.Clear();
+        await DataChanged.InvokeAsync(Data);
+    }
+
+    private void HidePanel() => _showResults = false;
+
+    private void ShowPanel() => _showResults = (_query.Length >= 3);
+
+    private void CheckIfOptionsHasFocus()
+    {
+        if (_optionsHasFocus) return;
+        HidePanel();
+    }
+
+    private async Task OnSelectItem(TItem item)
+    {
+        // Tell the parent the selected item has changed
+        await OnChangeEvent.InvokeAsync(item);
+        // Clear the list of search results
+        await ClearResults();
+    }
+
+    private async void OnUserFinish(object sender, ElapsedEventArgs e)
+    {
+        // We only want to show the results panel if the query is greater than 3
+        _showResults = (_query.Length >= 3);
+        // We don't want to start searching until the query is more than 3 characters
+        if (_query.Length < 3) return;
+        // Throws an error if no event args are passed.
+        if (e is null)
+        {
+            throw new ArgumentNullException(nameof(e));
+        }
+        // Waits for the user to stop typing before firing the search
+        await InvokeAsync(async () =>
+        {
+            await SearchAsync();
+        });
+
+    }
+
+    // Fires the search event method defined in the wrapping parent component
+    private async Task SearchAsync()
+    {
+        _isLoading = true;
+        await OnSearchEvent.InvokeAsync(_query);
+        _isLoading = false;
+        StateHasChanged();        
+    }
+
+    // Disposes the timer so that it doesn't run forever.
+    void IDisposable.Dispose()
+    {
+        _timer?.Dispose();
+    }
+
+}

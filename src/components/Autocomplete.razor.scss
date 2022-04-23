@@ -1,0 +1,11 @@
+.oiautocomplete-options {
+  z-index: 2;
+  max-height: 200px;
+  overflow: auto;
+
+  & > .oiautocomplete-options-item {
+      &:hover {
+          background-color: darken(#fff, 5%);
+      }
+  }
+}
